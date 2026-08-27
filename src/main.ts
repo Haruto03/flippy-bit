@@ -137,6 +137,17 @@ const render = (): ((s: State) => void) => {
         "viewBox",
         `0 0 ${Viewport.CANVAS_WIDTH} ${Viewport.CANVAS_HEIGHT}`,
     );
+
+    const deadLine = createSvgElement(svg.namespaceURI, "line", {
+        x1: "0",
+        y1: `${Constants.DEAD_LINE_Y}`,
+        x2: `${Viewport.CANVAS_WIDTH}`,
+        y2: `${Constants.DEAD_LINE_Y}`,
+        stroke: "red",
+        "stroke-width": "2",
+        "stroke-dasharray": "8 4",
+    });
+    svg.appendChild(deadLine);
     /**
      * Renders the current state to the canvas.
      *
