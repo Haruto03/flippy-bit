@@ -40,16 +40,38 @@ const Target = {
 
 const Constants = {
     DIGIT_COUNT: 8,
-    TICK_RATE_MS: 500, // Might need to change this!
+    TICK_RATE_MS: 20, // Might need to change this!
+    DEAD_LINE_Y: 300, 
+    SPAWN_INTERVAL_TICKS: 150,
+    TARGET_SPEED: 0.7, // The number of pixels the target moves per tick
 } as const;
+
+
+type Target = Readonly<{
+    id: string;
+    value:number; 
+    x: number;
+    y: number;
+}>
 
 // State processing
 type State = Readonly<{
     gameEnd: boolean;
+    bits: ReadonlyArray<boolean>;
+    targets: ReadonlyArray<Target>;
+    exit: ReadonlyArray<Target>;
+    objCount: number;
+    score: number;
+
 }>;
 
 const initialState: State = {
     gameEnd: false,
+    bits: Array.from({ length: Constants.DIGIT_COUNT }, () => false),
+    targets: [],
+    exit: [],
+    objCount: 0,
+    score: 0,
 };
 
 /**
@@ -175,7 +197,7 @@ export const state$ = (): Observable<State> => {
     /** Determines the rate of time steps */
     const tick$ = interval(Constants.TICK_RATE_MS);
 
-    return tick$.pipe(scan((s: State) => ({ gameEnd: false }), initialState));
+    return tick$.pipe(scan(tick, initialState));
 };
 
 // The following simply runs your main function on window load.  Make sure to leave it in place.
