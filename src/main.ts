@@ -21,6 +21,7 @@ import {
     fromEvent,
     interval,
     map,
+    merge,
     scan,
     switchMap,
     take,
@@ -41,18 +42,17 @@ const Target = {
 const Constants = {
     DIGIT_COUNT: 8,
     TICK_RATE_MS: 20, // Might need to change this!
-    DEAD_LINE_Y: 300, 
+    DEAD_LINE_Y: 300,
     SPAWN_INTERVAL_TICKS: 150,
     TARGET_SPEED: 0.7, // The number of pixels the target moves per tick
 } as const;
 
-
 type Target = Readonly<{
     id: string;
-    value:number; 
+    value: number;
     x: number;
     y: number;
-}>
+}>;
 
 // State processing
 type State = Readonly<{
@@ -62,7 +62,6 @@ type State = Readonly<{
     exit: ReadonlyArray<Target>;
     objCount: number;
     score: number;
-
 }>;
 
 const initialState: State = {
@@ -81,6 +80,51 @@ const initialState: State = {
  * @returns Updated state
  */
 const tick = (s: State) => s;
+
+/**
+ * An action transforms one state into the next.
+ *
+ * Every input to the game — the clock, the keyboard, and later the mouse —
+ * is expressed as an Action. Giving them a common type is what allows them
+ * to be merged into a single stream, and it keeps the state transition
+ * function free of any branching on the kind of input.
+ */
+interface Action {
+    apply(s: State): State;
+}
+
+/**
+ * Advances the simulation by one time step.
+ *
+ * Delegates to `tick` so that the falling/collision logic stays in one
+ * named function rather than inside a class.
+ */
+class Tick implements Action {
+    apply = (s: State): State => tick(s);
+}
+
+/**
+ * Flips a single digit of the player's row.
+ *
+ * The index is carried by the action rather than read from the state, so
+ * that keyboard and mouse input can produce the same action type.
+ */
+class FlipBit implements Action {
+    constructor(public readonly index: number) {}
+
+    apply = (s: State): State => ({
+        ...s,
+        bits: s.bits.map((b, i) => (i === this.index ? !b : b)),
+    });
+}
+
+/**
+ * Applies an action to the state; used as the accumulator of `scan`.
+ *
+ * Subtype polymorphism means this needs no branching: adding a new kind of
+ * action never requires changing this function.
+ */
+const reduceState = (s: State, action: Action): State => action.apply(s);
 
 // Rendering (side effects)
 
@@ -138,6 +182,8 @@ const render = (): ((s: State) => void) => {
         `0 0 ${Viewport.CANVAS_WIDTH} ${Viewport.CANVAS_HEIGHT}`,
     );
 
+    // Created once here rather than in the per-frame function below,
+    // since it never changes with the state.
     const deadLine = createSvgElement(svg.namespaceURI, "line", {
         x1: "0",
         y1: `${Constants.DEAD_LINE_Y}`,
@@ -145,7 +191,7 @@ const render = (): ((s: State) => void) => {
         y2: `${Constants.DEAD_LINE_Y}`,
         stroke: "red",
         "stroke-width": "2",
-        "stroke-dasharray": "8 4",
+        "stroke-dasharray": "8 4", //draw 8 pix and leave 4 pix space
     });
     svg.appendChild(deadLine);
     /**
@@ -156,29 +202,7 @@ const render = (): ((s: State) => void) => {
      * @param s Current state
      */
     return (s: State) => {
-        // Draw a static falling target as a demonstration
-        const target = createSvgElement(svg.namespaceURI, "rect", {
-            x: `${Viewport.CANVAS_WIDTH / 2 - Target.WIDTH / 2}`,
-            y: "40",
-            width: `${Target.WIDTH}`,
-            height: `${Target.HEIGHT}`,
-            rx: "6",
-            fill: "white",
-            stroke: "black",
-            "stroke-width": "2",
-        });
-        const targetText = createSvgElement(svg.namespaceURI, "text", {
-            x: `${Viewport.CANVAS_WIDTH / 2}`,
-            y: `${40 + Target.HEIGHT / 2 + 8}`,
-            "text-anchor": "middle",
-            "font-family": "monospace",
-            fill: "black",
-        });
-        targetText.textContent = "13";
-        svg.appendChild(target);
-        svg.appendChild(targetText);
-
-        // Draw the row of digit toggles as a demonstration
+        // Draw the player's digit row from the current state
         const digitWidth = Viewport.CANVAS_WIDTH / Constants.DIGIT_COUNT;
         Array.from({ length: Constants.DIGIT_COUNT }).forEach((_, i) => {
             const bit = createSvgElement(svg.namespaceURI, "rect", {
@@ -186,7 +210,7 @@ const render = (): ((s: State) => void) => {
                 y: `${Viewport.CANVAS_HEIGHT - 50}`,
                 width: `${digitWidth - 8}`,
                 height: "40",
-                fill: "#ef9a9a",
+                fill: s.bits[i] ? "#a5d6a7" : "#ef9a9a",
                 stroke: "black",
                 "stroke-width": "2",
             });
@@ -197,18 +221,51 @@ const render = (): ((s: State) => void) => {
                 "font-family": "monospace",
                 fill: "black",
             });
-            bitText.textContent = "0";
+            bitText.textContent = s.bits[i] ? "1" : "0";
             svg.appendChild(bit);
             svg.appendChild(bitText);
         });
     };
 };
 
+/**
+ * Key codes of the digit row, left to right.
+ *
+ * Derived from DIGIT_COUNT so that the row and its controls cannot drift
+ * apart, and so that the key layout is defined in exactly one place.
+ */
+const DIGIT_KEYS = Array.from(
+    { length: Constants.DIGIT_COUNT },
+    (_, i) => `Digit${i + 1}`,
+);
+
+/**
+ * Stream of bit flips driven by the keyboard.
+ *
+ * A single keydown stream is mapped to a digit index rather than creating
+ * one stream per key: the eight keys are the same action with a different
+ * argument, and this registers one DOM listener instead of eight.
+ */
+const flipBitKeyboard$ = (): Observable<FlipBit> =>
+    fromEvent<KeyboardEvent>(document, "keydown").pipe(
+        // Auto-repeat would flip a digit many times while a key is held.
+        filter(e => !e.repeat),
+        // `code` is the physical key, unaffected by modifiers or layout.
+        map(e => DIGIT_KEYS.indexOf(e.code)),
+        // indexOf returns -1 for keys that are not part of the digit row.
+        filter(i => i >= 0),
+        map(i => new FlipBit(i)),
+    );
+
 export const state$ = (): Observable<State> => {
     /** Determines the rate of time steps */
-    const tick$ = interval(Constants.TICK_RATE_MS);
+    const tick$ = interval(Constants.TICK_RATE_MS).pipe(map(() => new Tick()));
 
-    return tick$.pipe(scan(tick, initialState));
+    // All inputs are merged into one stream of actions so that the state is
+    // updated by a single, sequential fold — no concurrent modification.
+    return merge(tick$, flipBitKeyboard$()).pipe(
+        scan(reduceState, initialState),
+    );
 };
 
 // The following simply runs your main function on window load.  Make sure to leave it in place.
