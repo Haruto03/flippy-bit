@@ -34,7 +34,7 @@ const Viewport = {
     CANVAS_HEIGHT: 400,
 } as const;
 
-const Target = {
+const TargetView = {
     WIDTH: 64,
     HEIGHT: 36,
 } as const;
@@ -67,9 +67,17 @@ type State = Readonly<{
 const initialState: State = {
     gameEnd: false,
     bits: Array.from({ length: Constants.DIGIT_COUNT }, () => false),
-    targets: [],
+    // TEMPORARY: a fixed target to verify rendering before spawning exists.
+    targets: [
+        {
+            id: "target0",
+            value: 0x13,
+            x: Viewport.CANVAS_WIDTH / 2 - TargetView.WIDTH / 2,
+            y: 50,
+        },
+    ],
     exit: [],
-    objCount: 0,
+    objCount: 1,
     score: 0,
 };
 
@@ -174,6 +182,44 @@ const createSvgElement = (
     return elem;
 };
 
+/**
+ * Builds the SVG for one target: a rounded box showing its value in hex.
+ *
+ * The children are positioned relative to the group's origin, so moving a
+ * target only requires updating the group's transform, and removing it
+ * only requires removing the group.
+ *
+ * @param svg The canvas to append to
+ * @param t The target to build a view for
+ * @returns The group element representing the target
+ */
+const createTargetView = (svg: SVGSVGElement, t: Target): SVGElement => {
+    const g = createSvgElement(svg.namespaceURI, "g", { id: t.id });
+    const box = createSvgElement(svg.namespaceURI, "rect", {
+        x: "0",
+        y: "0",
+        width: `${TargetView.WIDTH}`,
+        height: `${TargetView.HEIGHT}`,
+        rx: "6",
+        fill: "white",
+        stroke: "black",
+        "stroke-width": "2",
+    });
+    const label = createSvgElement(svg.namespaceURI, "text", {
+        x: `${TargetView.WIDTH / 2}`,
+        y: `${TargetView.HEIGHT / 2 + 6}`,
+        "text-anchor": "middle",
+        "font-family": "monospace",
+        fill: "black",
+    });
+    // The value is stored as a number; base 16 is a display concern only.
+    label.textContent = t.value.toString(16).toUpperCase();
+    g.appendChild(box);
+    g.appendChild(label);
+    svg.appendChild(g);
+    return g;
+};
+
 const render = (): ((s: State) => void) => {
     const svg = document.querySelector("#svgCanvas") as SVGSVGElement;
 
@@ -194,6 +240,36 @@ const render = (): ((s: State) => void) => {
         "stroke-dasharray": "8 4", //draw 8 pix and leave 4 pix space
     });
     svg.appendChild(deadLine);
+
+    /**
+     * The player's digit row.
+     *
+     * The number of digits never changes, so the elements are built once
+     * here and only their text and colour are updated per frame. Building
+     * them inside the render function would append a new row on every tick.
+     */
+    const digitWidth = Viewport.CANVAS_WIDTH / Constants.DIGIT_COUNT;
+    const bitViews = Array.from({ length: Constants.DIGIT_COUNT }, (_, i) => {
+        const rect = createSvgElement(svg.namespaceURI, "rect", {
+            x: `${i * digitWidth + 4}`,
+            y: `${Viewport.CANVAS_HEIGHT - 50}`,
+            width: `${digitWidth - 8}`,
+            height: "40",
+            stroke: "black",
+            "stroke-width": "2",
+        });
+        const text = createSvgElement(svg.namespaceURI, "text", {
+            x: `${i * digitWidth + digitWidth / 2}`,
+            y: `${Viewport.CANVAS_HEIGHT - 22}`,
+            "text-anchor": "middle",
+            "font-family": "monospace",
+            fill: "black",
+        });
+        svg.appendChild(rect);
+        svg.appendChild(text);
+        return { rect, text };
+    });
+
     /**
      * Renders the current state to the canvas.
      *
@@ -202,28 +278,24 @@ const render = (): ((s: State) => void) => {
      * @param s Current state
      */
     return (s: State) => {
-        // Draw the player's digit row from the current state
-        const digitWidth = Viewport.CANVAS_WIDTH / Constants.DIGIT_COUNT;
-        Array.from({ length: Constants.DIGIT_COUNT }).forEach((_, i) => {
-            const bit = createSvgElement(svg.namespaceURI, "rect", {
-                x: `${i * digitWidth + 4}`,
-                y: `${Viewport.CANVAS_HEIGHT - 50}`,
-                width: `${digitWidth - 8}`,
-                height: "40",
-                fill: s.bits[i] ? "#a5d6a7" : "#ef9a9a",
-                stroke: "black",
-                "stroke-width": "2",
-            });
-            const bitText = createSvgElement(svg.namespaceURI, "text", {
-                x: `${i * digitWidth + digitWidth / 2}`,
-                y: `${Viewport.CANVAS_HEIGHT - 22}`,
-                "text-anchor": "middle",
-                "font-family": "monospace",
-                fill: "black",
-            });
-            bitText.textContent = s.bits[i] ? "1" : "0";
-            svg.appendChild(bit);
-            svg.appendChild(bitText);
+        bitViews.forEach(({ rect, text }, i) => {
+            rect.setAttribute("fill", s.bits[i] ? "#a5d6a7" : "#ef9a9a");
+            text.textContent = s.bits[i] ? "1" : "0";
+        });
+
+        // Targets appear and disappear at runtime, so each one is looked up
+        // by the id carried in the state, and built on first sight.
+        s.targets.forEach(t => {
+            const view: Element =
+                document.getElementById(t.id) ?? createTargetView(svg, t);
+            view.setAttribute("transform", `translate(${t.x}, ${t.y})`);
+        });
+
+        // Nothing else can know what disappeared: the render function only
+        // ever sees the current state, so the model reports removals here.
+        s.exit.forEach(t => {
+            const view = document.getElementById(t.id);
+            if (view) svg.removeChild(view);
         });
     };
 };
