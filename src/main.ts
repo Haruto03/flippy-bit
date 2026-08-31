@@ -84,6 +84,17 @@ const initialState: State = {
 const not = <T>(f: (x: T) => boolean) => (x: T): boolean => !f(x);
 
 /**
+ * The value of the digit row read as a binary number, most significant
+ * digit first.
+ *
+ * The state stores digits rather than a value so that flipping one is a
+ * simple map; the value is derived only where a comparison needs it, which
+ * keeps the two from ever disagreeing.
+ */
+const bitsValue = (bits: ReadonlyArray<boolean>): number =>
+    bits.reduce((acc, b) => acc * 2 + (b ? 1 : 0), 0);
+
+/**
  * Values of the falling targets, in order.
  *
  * The minimum requirements allow a fixed sequence. Keeping the values in
@@ -112,15 +123,10 @@ const createTarget = (count: number): Target => ({
 /**
  * Updates the state by proceeding with one time step.
  *
- * @param s Current state
- * @returns Updated state
- */
-/**
- * Updates the state by proceeding with one time step.
- *
- * Targets fall, those past the bottom edge are reported for removal, and a
- * new target is spawned at a fixed interval. `exit` is overwritten rather
- * than accumulated: it describes only what disappeared this frame.
+ * Targets fall, and the lowest one is judged when its bottom edge reaches
+ * the dead line: a matching digit row resolves it and scores a point, a
+ * mismatch ends the game. Targets above the lowest are ignored until it has
+ * been dealt with, as the specification requires.
  *
  * @param s Current state
  * @returns Updated state
@@ -131,17 +137,43 @@ const tick = (s: State): State => {
         y: t.y + Constants.TARGET_SPEED,
     }));
 
-    const offScreen = (t: Target): boolean => t.y > Viewport.CANVAS_HEIGHT;
+    // The lowest target is the only one in play. Searching by position
+    // rather than by array order keeps this correct however targets are
+    // added or removed.
+    const lowest = moved.reduce<Target | undefined>(
+        (lo, t) => (lo === undefined || t.y > lo.y ? t : lo),
+        undefined,
+    );
+
+    // Judged the moment the bottom edge touches the line, i.e. when the
+    // target visually reaches it rather than after passing through.
+    const judged =
+        lowest !== undefined &&
+        lowest.y + TargetView.HEIGHT >= Constants.DEAD_LINE_Y
+            ? lowest
+            : undefined;
+
+    const correct = judged !== undefined && bitsValue(s.bits) === judged.value;
+    const resolvedId = correct ? judged?.id : undefined;
+
+    // Two ways to leave the canvas: matched at the line, or fallen past the
+    // bottom. Both must be reported so the view can remove their elements.
+    const leaving = (t: Target): boolean =>
+        t.id === resolvedId || t.y > Viewport.CANVAS_HEIGHT;
+
     const spawning = s.time % Constants.SPAWN_INTERVAL_TICKS === 0;
+    const remaining = moved.filter(not(leaving));
 
     return {
         ...s,
         time: s.time + 1,
         targets: spawning
-            ? moved.filter(not(offScreen)).concat(createTarget(s.objCount))
-            : moved.filter(not(offScreen)),
+            ? remaining.concat(createTarget(s.objCount))
+            : remaining,
         objCount: spawning ? s.objCount + 1 : s.objCount,
-        exit: moved.filter(offScreen),
+        exit: moved.filter(leaving),
+        score: correct ? s.score + 1 : s.score,
+        gameEnd: judged !== undefined && !correct,
     };
 };
 
@@ -160,11 +192,12 @@ interface Action {
 /**
  * Advances the simulation by one time step.
  *
- * Delegates to `tick` so that the falling/collision logic stays in one
- * named function rather than inside a class.
+ * The clock keeps running after a game over and the state is simply held
+ * still, rather than unsubscribing: the stream must stay alive so that a
+ * restart can be added without re-subscribing the whole game.
  */
 class Tick implements Action {
-    apply = (s: State): State => tick(s);
+    apply = (s: State): State => (s.gameEnd ? s : tick(s));
 }
 
 /**
@@ -325,6 +358,9 @@ const render = (): ((s: State) => void) => {
         svg.appendChild(text);
         return { rect, text };
     });
+    const scoreText = document.querySelector("#scoreText") as HTMLElement;
+    const gameOverView = document.querySelector("#gameOver") as SVGElement;
+
 
     /**
      * Renders the current state to the canvas.
@@ -353,6 +389,15 @@ const render = (): ((s: State) => void) => {
             const view = document.getElementById(t.id);
             if (view) svg.removeChild(view);
         });
+                scoreText.textContent = String(s.score);
+
+        // Both branches are needed: the view must be able to return to the
+        // playing state once a restart is added.
+        if (s.gameEnd) {
+            show(gameOverView);
+        } else {
+            hide(gameOverView);
+        }
     };
 };
 
