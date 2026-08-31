@@ -56,6 +56,7 @@ type Target = Readonly<{
 
 // State processing
 type State = Readonly<{
+    time: number;
     gameEnd: boolean;
     bits: ReadonlyArray<boolean>;
     targets: ReadonlyArray<Target>;
@@ -65,21 +66,48 @@ type State = Readonly<{
 }>;
 
 const initialState: State = {
+    time: 0,
     gameEnd: false,
     bits: Array.from({ length: Constants.DIGIT_COUNT }, () => false),
-    // TEMPORARY: a fixed target to verify rendering before spawning exists.
-    targets: [
-        {
-            id: "target0",
-            value: 0x13,
-            x: Viewport.CANVAS_WIDTH / 2 - TargetView.WIDTH / 2,
-            y: 50,
-        },
-    ],
+    targets: [],
     exit: [],
-    objCount: 1,
+    objCount: 0,
     score: 0,
 };
+
+/**
+ * Negates a predicate.
+ *
+ * Lets a single predicate drive both halves of a partition, so the two
+ * filters cannot drift out of agreement.
+ */
+const not = <T>(f: (x: T) => boolean) => (x: T): boolean => !f(x);
+
+/**
+ * Values of the falling targets, in order.
+ *
+ * The minimum requirements allow a fixed sequence. Keeping the values in
+ * one array means switching to random generation later only replaces this
+ * definition, not the spawning logic.
+ */
+const SEQUENCE = [0x13, 0x2a, 0x07, 0xb4, 0x5c, 0x91, 0x6e, 0xf0] as const;
+
+/**
+ * Creates a target just above the top edge of the canvas.
+ *
+ * Starting fully off-screen makes the target slide into view rather than
+ * appear abruptly. Horizontal placement happens here so that the state
+ * carries real coordinates and the view stays a plain projection of it.
+ *
+ * @param count Number of targets created so far; supplies a unique id
+ * @returns A new target
+ */
+const createTarget = (count: number): Target => ({
+    id: `target${count}`,
+    value: SEQUENCE[count % SEQUENCE.length],
+    x: Viewport.CANVAS_WIDTH / 2 - TargetView.WIDTH / 2,
+    y: -TargetView.HEIGHT,
+});
 
 /**
  * Updates the state by proceeding with one time step.
@@ -87,7 +115,35 @@ const initialState: State = {
  * @param s Current state
  * @returns Updated state
  */
-const tick = (s: State) => s;
+/**
+ * Updates the state by proceeding with one time step.
+ *
+ * Targets fall, those past the bottom edge are reported for removal, and a
+ * new target is spawned at a fixed interval. `exit` is overwritten rather
+ * than accumulated: it describes only what disappeared this frame.
+ *
+ * @param s Current state
+ * @returns Updated state
+ */
+const tick = (s: State): State => {
+    const moved = s.targets.map(t => ({
+        ...t,
+        y: t.y + Constants.TARGET_SPEED,
+    }));
+
+    const offScreen = (t: Target): boolean => t.y > Viewport.CANVAS_HEIGHT;
+    const spawning = s.time % Constants.SPAWN_INTERVAL_TICKS === 0;
+
+    return {
+        ...s,
+        time: s.time + 1,
+        targets: spawning
+            ? moved.filter(not(offScreen)).concat(createTarget(s.objCount))
+            : moved.filter(not(offScreen)),
+        objCount: spawning ? s.objCount + 1 : s.objCount,
+        exit: moved.filter(offScreen),
+    };
+};
 
 /**
  * An action transforms one state into the next.
