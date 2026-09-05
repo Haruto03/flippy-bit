@@ -219,6 +219,19 @@ class FlipBit implements Action {
 }
 
 /**
+ * Restarts the game from any point, during play or after a game over.
+ *
+ * The current targets are handed to `exit` rather than simply dropped, so
+ * the view removes their elements; every other field returns to its initial
+ * value. Resetting inside the stream keeps the game running without
+ * re-subscribing, which is why Tick holds the state still instead of
+ * completing on game over.
+ */
+class Restart implements Action {
+    apply = (s: State): State => ({ ...initialState, exit: s.targets });
+}
+
+/**
  * Applies an action to the state; used as the accumulator of `scan`.
  *
  * Subtype polymorphism means this needs no branching: adding a new kind of
@@ -428,13 +441,27 @@ const flipBitKeyboard$ = (): Observable<FlipBit> =>
         map(i => new FlipBit(i)),
     );
 
+/**
+ * Stream of restart requests, triggered by the R key.
+ *
+ * Merged into the same action stream as everything else, so a restart is
+ * just another state transition and works during play or on the game-over
+ * screen without any special handling.
+ */
+const restart$ = (): Observable<Restart> =>
+    fromEvent<KeyboardEvent>(document, "keydown").pipe(
+        filter(e => e.code === "KeyR"),
+        filter(e => !e.repeat),
+        map(() => new Restart()),
+    );
+
 export const state$ = (): Observable<State> => {
     /** Determines the rate of time steps */
     const tick$ = interval(Constants.TICK_RATE_MS).pipe(map(() => new Tick()));
 
     // All inputs are merged into one stream of actions so that the state is
     // updated by a single, sequential fold — no concurrent modification.
-    return merge(tick$, flipBitKeyboard$()).pipe(
+    return merge(tick$, flipBitKeyboard$(), restart$()).pipe(
         scan(reduceState, initialState),
     );
 };
