@@ -43,7 +43,9 @@ const Constants = {
     DIGIT_COUNT: 8,
     TICK_RATE_MS: 20, // Might need to change this!
     DEAD_LINE_Y: 300,
-    SPAWN_INTERVAL_TICKS: 150,
+    MIN_SPAWN_TICKS: 50, // Shortest gap between targets (1s at 50fps)
+    MAX_SPAWN_TICKS: 150, // Longest gap between targets (3s at 50fps)
+    SEED: 1234, // Starting seed for the pure RNG
     BASE_SPEED: 0.7, // Pixels a target moves per tick at the start
     SPEED_GROWTH: 0.0005, // Extra pixels-per-tick added each tick survived
     MAX_SPEED: 3, // Cap so late-game targets stay catchable
@@ -78,6 +80,8 @@ type State = Readonly<{
     exit: ReadonlyArray<Target>;
     objCount: number;
     score: number;
+    rngSeed: number;
+    nextSpawnTime: number;
 }>;
 
 const initialState: State = {
@@ -88,6 +92,8 @@ const initialState: State = {
     exit: [],
     objCount: 0,
     score: 0,
+    rngSeed: Constants.SEED,
+    nextSpawnTime: 0,
 };
 
 /**
@@ -126,13 +132,33 @@ const currentSpeed = (s: State): number =>
     );
 
 /**
- * Values of the falling targets, in order.
+ * A linear congruential generator providing pure hash/scale functions.
  *
- * The minimum requirements allow a fixed sequence. Keeping the values in
- * one array means switching to random generation later only replaces this
- * definition, not the spawning logic.
+ * Reused from the Week 4 applied exercise. Keeping the seed in the game
+ * state, rather than calling Math.random, is what lets `tick` stay a pure
+ * function of its input, and lets a whole run be reproduced from one seed.
  */
-const SEQUENCE = [0x13, 0x2a, 0x07, 0xb4, 0x5c, 0x91, 0x6e, 0xf0] as const;
+abstract class RNG {
+    private static m = 0x80000000; // 2^31
+    private static a = 1103515245;
+    private static c = 12345;
+
+    /** The next hash in the sequence for a given seed. */
+    static hash = (seed: number): number => (RNG.a * seed + RNG.c) % RNG.m;
+
+    /** Scales a hash to a float in [-1, 1]. */
+    static scale = (hash: number): number => (2 * hash) / (RNG.m - 1) - 1;
+}
+
+/**
+ * A whole number in [lo, hi], derived purely from a seed.
+ *
+ * Generic over the range so the same helper supplies both target values and
+ * spawn gaps; Math.min guards the single edge case where the hash scales to
+ * exactly 1.
+ */
+const randomInRange = (seed: number, lo: number, hi: number): number =>
+    Math.min(hi, lo + Math.floor(((RNG.scale(seed) + 1) / 2) * (hi - lo + 1)));
 
 /**
  * Creates a target just above the top edge of the canvas.
@@ -142,11 +168,12 @@ const SEQUENCE = [0x13, 0x2a, 0x07, 0xb4, 0x5c, 0x91, 0x6e, 0xf0] as const;
  * carries real coordinates and the view stays a plain projection of it.
  *
  * @param count Number of targets created so far; supplies a unique id
+ * @param value The value the player must match
  * @returns A new target
  */
-const createTarget = (count: number): Target => ({
+const createTarget = (count: number, value: number): Target => ({
     id: `target${count}`,
-    value: SEQUENCE[count % SEQUENCE.length],
+    value,
     x: Viewport.CANVAS_WIDTH / 2 - TargetView.WIDTH / 2,
     y: -TargetView.HEIGHT,
 });
@@ -193,16 +220,31 @@ const tick = (s: State): State => {
     const leaving = (t: Target): boolean =>
         t.id === resolvedId || t.y > Viewport.CANVAS_HEIGHT;
 
-    const spawning = s.time % Constants.SPAWN_INTERVAL_TICKS === 0;
     const remaining = moved.filter(not(leaving));
+
+    // Spawn when the scheduled time arrives, drawing the value and the next
+    // gap (1-3s) from the RNG. The seed is advanced twice and stored, so the
+    // sequence never repeats and each draw is independent.
+    const spawning = s.time >= s.nextSpawnTime;
+    const valueSeed = RNG.hash(s.rngSeed);
+    const gapSeed = RNG.hash(valueSeed);
+    const gap = randomInRange(
+        gapSeed,
+        Constants.MIN_SPAWN_TICKS,
+        Constants.MAX_SPAWN_TICKS,
+    );
 
     return {
         ...s,
         time: s.time + 1,
         targets: spawning
-            ? remaining.concat(createTarget(s.objCount))
+            ? remaining.concat(
+                  createTarget(s.objCount, randomInRange(valueSeed, 0, 255)),
+              )
             : remaining,
         objCount: spawning ? s.objCount + 1 : s.objCount,
+        rngSeed: spawning ? gapSeed : s.rngSeed,
+        nextSpawnTime: spawning ? s.time + gap : s.nextSpawnTime,
         exit: moved.filter(leaving),
         score: correct ? s.score + 1 : s.score,
         gameEnd: judged !== undefined && !correct,
