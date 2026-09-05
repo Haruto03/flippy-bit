@@ -44,7 +44,9 @@ const Constants = {
     TICK_RATE_MS: 20, // Might need to change this!
     DEAD_LINE_Y: 300,
     SPAWN_INTERVAL_TICKS: 150,
-    TARGET_SPEED: 0.7, // The number of pixels the target moves per tick
+    BASE_SPEED: 0.7, // Pixels a target moves per tick at the start
+    SPEED_GROWTH: 0.0005, // Extra pixels-per-tick added each tick survived
+    MAX_SPEED: 3, // Cap so late-game targets stay catchable
 } as const;
 
 type Target = Readonly<{
@@ -98,6 +100,19 @@ const bitsValue = (bits: ReadonlyArray<boolean>): number =>
     bits.reduce((acc, b) => acc * 2 + (b ? 1 : 0), 0);
 
 /**
+ * The fall speed for the current moment, growing with time survived.
+ *
+ * Derived from `time` rather than stored, so it needs no separate state and
+ * resets to the base speed automatically on restart. Capped so that very
+ * long games stay playable rather than becoming impossible.
+ */
+const currentSpeed = (s: State): number =>
+    Math.min(
+        Constants.MAX_SPEED,
+        Constants.BASE_SPEED + s.time * Constants.SPEED_GROWTH,
+    );
+
+/**
  * Values of the falling targets, in order.
  *
  * The minimum requirements allow a fixed sequence. Keeping the values in
@@ -135,9 +150,10 @@ const createTarget = (count: number): Target => ({
  * @returns Updated state
  */
 const tick = (s: State): State => {
+    const speed = currentSpeed(s);
     const moved = s.targets.map(t => ({
         ...t,
-        y: t.y + Constants.TARGET_SPEED,
+        y: t.y + speed,
     }));
 
     // The lowest target is the only one in play. Searching by position
