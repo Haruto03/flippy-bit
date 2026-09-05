@@ -81,7 +81,10 @@ const initialState: State = {
  * Lets a single predicate drive both halves of a partition, so the two
  * filters cannot drift out of agreement.
  */
-const not = <T>(f: (x: T) => boolean) => (x: T): boolean => !f(x);
+const not =
+    <T>(f: (x: T) => boolean) =>
+    (x: T): boolean =>
+        !f(x);
 
 /**
  * The value of the digit row read as a binary number, most significant
@@ -361,7 +364,6 @@ const render = (): ((s: State) => void) => {
     const scoreText = document.querySelector("#scoreText") as HTMLElement;
     const gameOverView = document.querySelector("#gameOver") as SVGElement;
 
-
     /**
      * Renders the current state to the canvas.
      *
@@ -387,17 +389,13 @@ const render = (): ((s: State) => void) => {
         // ever sees the current state, so the model reports removals here.
         s.exit.forEach(t => {
             const view = document.getElementById(t.id);
-            if (view) svg.removeChild(view);
+            view ? svg.removeChild(view) : null;
         });
-                scoreText.textContent = String(s.score);
+        scoreText.textContent = String(s.score);
 
         // Both branches are needed: the view must be able to return to the
         // playing state once a restart is added.
-        if (s.gameEnd) {
-            show(gameOverView);
-        } else {
-            hide(gameOverView);
-        }
+        s.gameEnd ? show(gameOverView) : hide(gameOverView);
     };
 };
 
