@@ -49,6 +49,19 @@ const Constants = {
     MAX_SPEED: 3, // Cap so late-game targets stay catchable
 } as const;
 
+/**
+ * Geometry of the digit row at the bottom of the canvas.
+ *
+ * Shared by the renderer that draws the boxes and the mouse handler that
+ * decides which box was clicked, so a click always lands on the digit the
+ * player sees.
+ */
+const DigitRow = {
+    WIDTH: Viewport.CANVAS_WIDTH / Constants.DIGIT_COUNT,
+    TOP: Viewport.CANVAS_HEIGHT - 50,
+    HEIGHT: 40,
+} as const;
+
 type Target = Readonly<{
     id: string;
     value: number;
@@ -369,19 +382,18 @@ const render = (): ((s: State) => void) => {
      * here and only their text and colour are updated per frame. Building
      * them inside the render function would append a new row on every tick.
      */
-    const digitWidth = Viewport.CANVAS_WIDTH / Constants.DIGIT_COUNT;
     const bitViews = Array.from({ length: Constants.DIGIT_COUNT }, (_, i) => {
         const rect = createSvgElement(svg.namespaceURI, "rect", {
-            x: `${i * digitWidth + 4}`,
-            y: `${Viewport.CANVAS_HEIGHT - 50}`,
-            width: `${digitWidth - 8}`,
-            height: "40",
+            x: `${i * DigitRow.WIDTH + 4}`,
+            y: `${DigitRow.TOP}`,
+            width: `${DigitRow.WIDTH - 8}`,
+            height: `${DigitRow.HEIGHT}`,
             stroke: "black",
             "stroke-width": "2",
         });
         const text = createSvgElement(svg.namespaceURI, "text", {
-            x: `${i * digitWidth + digitWidth / 2}`,
-            y: `${Viewport.CANVAS_HEIGHT - 22}`,
+            x: `${i * DigitRow.WIDTH + DigitRow.WIDTH / 2}`,
+            y: `${DigitRow.TOP + 28}`,
             "text-anchor": "middle",
             "font-family": "monospace",
             fill: "black",
@@ -458,6 +470,41 @@ const flipBitKeyboard$ = (): Observable<FlipBit> =>
     );
 
 /**
+ * The digit under a mouse event, or -1 if the click missed the row.
+ *
+ * The click is mapped through the SVG's own screen transform rather than
+ * using raw client pixels, so it stays correct despite the viewBox scaling
+ * and the canvas border.
+ *
+ * @param svg The canvas whose coordinate system to use
+ * @param e The mouse event to locate
+ * @returns The digit index, or -1 if outside the row
+ */
+const digitAt = (svg: SVGSVGElement, e: MouseEvent): number => {
+    const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(
+        svg.getScreenCTM()!.inverse(),
+    );
+    const i = Math.floor(p.x / DigitRow.WIDTH);
+    const inRow = p.y >= DigitRow.TOP && p.y <= DigitRow.TOP + DigitRow.HEIGHT;
+    return inRow && i >= 0 && i < Constants.DIGIT_COUNT ? i : -1;
+};
+
+/**
+ * Stream of bit flips driven by the mouse.
+ *
+ * Clicking a digit flips it, producing the very same FlipBit action as the
+ * keyboard: the model cannot tell the two inputs apart.
+ */
+const flipBitMouse$ = (): Observable<FlipBit> => {
+    const svg = document.querySelector("#svgCanvas") as SVGSVGElement;
+    return fromEvent<MouseEvent>(svg, "mousedown").pipe(
+        map(e => digitAt(svg, e)),
+        filter(i => i >= 0),
+        map(i => new FlipBit(i)),
+    );
+};
+
+/**
  * Stream of restart requests, triggered by the R key.
  *
  * Merged into the same action stream as everything else, so a restart is
@@ -477,7 +524,7 @@ export const state$ = (): Observable<State> => {
 
     // All inputs are merged into one stream of actions so that the state is
     // updated by a single, sequential fold — no concurrent modification.
-    return merge(tick$, flipBitKeyboard$(), restart$()).pipe(
+    return merge(tick$, flipBitKeyboard$(), flipBitMouse$(), restart$()).pipe(
         scan(reduceState, initialState),
     );
 };
