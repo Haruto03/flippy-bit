@@ -46,7 +46,7 @@ const Constants = {
     MIN_SPAWN_TICKS: 50, // Shortest gap between targets (1s at 50fps)
     MAX_SPAWN_TICKS: 150, // Longest gap between targets (3s at 50fps)
     SEED: 1234, // Starting seed for the pure RNG
-    BASE_SPEED: 0.7, // Pixels a target moves per tick at the start
+    BASE_SPEED: 0.5, // Pixels a target moves per tick at the start
     SPEED_GROWTH: 0.0005, // Extra pixels-per-tick added each tick survived
     MAX_SPEED: 3, // Cap so late-game targets stay catchable
 } as const;
