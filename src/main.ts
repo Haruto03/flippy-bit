@@ -82,6 +82,7 @@ type State = Readonly<{
     score: number;
     rngSeed: number;
     nextSpawnTime: number;
+    paused: boolean;
 }>;
 
 const initialState: State = {
@@ -94,6 +95,7 @@ const initialState: State = {
     score: 0,
     rngSeed: Constants.SEED,
     nextSpawnTime: 0,
+    paused: false,
 };
 
 /**
@@ -266,12 +268,22 @@ interface Action {
 /**
  * Advances the simulation by one time step.
  *
- * The clock keeps running after a game over and the state is simply held
- * still, rather than unsubscribing: the stream must stay alive so that a
- * restart can be added without re-subscribing the whole game.
+ * The clock keeps running after a game over or while paused, and the state
+ * is simply held still, rather than unsubscribing: the stream must stay
+ * alive so that a restart or resume can be added without re-subscribing.
  */
 class Tick implements Action {
-    apply = (s: State): State => (s.gameEnd ? s : tick(s));
+    apply = (s: State): State => (s.gameEnd || s.paused ? s : tick(s));
+}
+
+/**
+ * Toggles the paused state.
+ *
+ * A no-op after a game over, so pausing cannot mask the game-over screen.
+ * The clock is unaffected; only whether Tick advances the game changes.
+ */
+class Pause implements Action {
+    apply = (s: State): State => (s.gameEnd ? s : { ...s, paused: !s.paused });
 }
 
 /**
@@ -560,15 +572,32 @@ const restart$ = (): Observable<Restart> =>
         map(() => new Restart()),
     );
 
+/**
+ * Stream of pause toggles, triggered by the P key.
+ *
+ * Like restart, it is just another action on the shared stream, so pausing
+ * needs no special wiring beyond Tick checking the paused flag.
+ */
+const pause$ = (): Observable<Pause> =>
+    fromEvent<KeyboardEvent>(document, "keydown").pipe(
+        filter(e => e.code === "KeyP"),
+        filter(e => !e.repeat),
+        map(() => new Pause()),
+    );
+
 export const state$ = (): Observable<State> => {
     /** Determines the rate of time steps */
     const tick$ = interval(Constants.TICK_RATE_MS).pipe(map(() => new Tick()));
 
     // All inputs are merged into one stream of actions so that the state is
     // updated by a single, sequential fold — no concurrent modification.
-    return merge(tick$, flipBitKeyboard$(), flipBitMouse$(), restart$()).pipe(
-        scan(reduceState, initialState),
-    );
+    return merge(
+        tick$,
+        flipBitKeyboard$(),
+        flipBitMouse$(),
+        restart$(),
+        pause$(),
+    ).pipe(scan(reduceState, initialState));
 };
 
 // The following simply runs your main function on window load.  Make sure to leave it in place.
