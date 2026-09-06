@@ -63,6 +63,15 @@ const DigitRow = {
     HEIGHT: 40,
 } as const;
 
+/**
+ * A falling target: its value and top-left position on the canvas.
+ *
+ * `x` is carried in the state even though every target currently spawns at
+ * the centre. Keeping position fully in the state (rather than hard-coding
+ * the centre in the view) means the renderer stays a plain projection, and
+ * leaves room for targets to fall in different columns without touching the
+ * view.
+ */
 export type Target = Readonly<{
     id: string;
     value: number;
