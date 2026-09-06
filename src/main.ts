@@ -16,7 +16,6 @@ import "./style.css";
 
 import {
     Observable,
-    catchError,
     filter,
     fromEvent,
     interval,
@@ -459,6 +458,21 @@ const render = (): ((s: State) => void) => {
     const scoreText = document.querySelector("#scoreText") as HTMLElement;
     const gameOverView = document.querySelector("#gameOver") as SVGElement;
 
+    // A static overlay, hidden by default and shown while paused. Built once
+    // here for the same reason as the dead line: it never varies with state,
+    // only its visibility does.
+    const pausedView = createSvgElement(svg.namespaceURI, "text", {
+        x: `${Viewport.CANVAS_WIDTH / 2}`,
+        y: `${Viewport.CANVAS_HEIGHT / 2}`,
+        "text-anchor": "middle",
+        "font-family": "sans-serif",
+        "font-size": "48",
+        fill: "yellow",
+        visibility: "hidden",
+    });
+    pausedView.textContent = "PAUSED";
+    svg.appendChild(pausedView);
+
     /**
      * Renders the current state to the canvas.
      *
@@ -491,6 +505,7 @@ const render = (): ((s: State) => void) => {
         // Both branches are needed: the view must be able to return to the
         // playing state once a restart is added.
         s.gameEnd ? show(gameOverView) : hide(gameOverView);
+        s.paused ? show(pausedView) : hide(pausedView);
     };
 };
 
