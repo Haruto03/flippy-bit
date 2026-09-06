@@ -42,8 +42,8 @@ const Constants = {
     DIGIT_COUNT: 8,
     TICK_RATE_MS: 20, // Might need to change this!
     DEAD_LINE_Y: 300,
-    MIN_SPAWN_TICKS: 50, // Shortest gap between targets (1s at 50fps)
-    MAX_SPAWN_TICKS: 150, // Longest gap between targets (3s at 50fps)
+    MIN_SPAWN_TICKS: 50, // Shortest gap between targets
+    MAX_SPAWN_TICKS: 150, // Longest gap between targets
     SEED: 1234, // Starting seed for the pure RNG
     BASE_SPEED: 0.5, // Pixels a target moves per tick at the start
     SPEED_GROWTH: 0.0005, // Extra pixels-per-tick added each tick survived
@@ -63,7 +63,7 @@ const DigitRow = {
     HEIGHT: 40,
 } as const;
 
-type Target = Readonly<{
+export type Target = Readonly<{
     id: string;
     value: number;
     x: number;
@@ -71,7 +71,7 @@ type Target = Readonly<{
 }>;
 
 // State processing
-type State = Readonly<{
+export type State = Readonly<{
     time: number;
     gameEnd: boolean;
     bits: ReadonlyArray<boolean>;
@@ -84,7 +84,7 @@ type State = Readonly<{
     paused: boolean;
 }>;
 
-const initialState: State = {
+export const initialState: State = {
     time: 0,
     gameEnd: false,
     bits: Array.from({ length: Constants.DIGIT_COUNT }, () => false),
@@ -116,7 +116,7 @@ const not =
  * simple map; the value is derived only where a comparison needs it, which
  * keeps the two from ever disagreeing.
  */
-const bitsValue = (bits: ReadonlyArray<boolean>): number =>
+export const bitsValue = (bits: ReadonlyArray<boolean>): number =>
     bits.reduce((acc, b) => acc * 2 + (b ? 1 : 0), 0);
 
 /**
@@ -126,20 +126,20 @@ const bitsValue = (bits: ReadonlyArray<boolean>): number =>
  * resets to the base speed automatically on restart. Capped so that very
  * long games stay playable rather than becoming impossible.
  */
-const currentSpeed = (s: State): number =>
+export const currentSpeed = (s: State): number =>
     Math.min(
         Constants.MAX_SPEED,
         Constants.BASE_SPEED + s.time * Constants.SPEED_GROWTH,
     );
 
 /**
- * A linear congruential generator providing pure hash/scale functions.
+ * A linear congruential generator providing pure hash/unit functions.
  *
  * Reused from the Week 4 applied exercise. Keeping the seed in the game
  * state, rather than calling Math.random, is what lets `tick` stay a pure
  * function of its input, and lets a whole run be reproduced from one seed.
  */
-abstract class RNG {
+export abstract class RNG {
     private static m = 0x80000000; // 2^31
     private static a = 1103515245;
     private static c = 12345;
@@ -147,19 +147,25 @@ abstract class RNG {
     /** The next hash in the sequence for a given seed. */
     static hash = (seed: number): number => (RNG.a * seed + RNG.c) % RNG.m;
 
-    /** Scales a hash to a float in [-1, 1]. */
-    static scale = (hash: number): number => (2 * hash) / (RNG.m - 1) - 1;
+    /**
+     * Scales a hash to a float in [0, 1].
+     *
+     * The Week 4 version returned [-1, 1] for jump strengths that swing above
+     * and below a midpoint; this game only ever maps into a positive range,
+     * so the extra shift is dropped and the fraction stays in [0, 1].
+     */
+    static unit = (hash: number): number => hash / (RNG.m - 1);
 }
 
 /**
  * A whole number in [lo, hi], derived purely from a seed.
  *
  * Generic over the range so the same helper supplies both target values and
- * spawn gaps; Math.min guards the single edge case where the hash scales to
+ * spawn gaps; Math.min guards the single edge case where the fraction is
  * exactly 1.
  */
-const randomInRange = (seed: number, lo: number, hi: number): number =>
-    Math.min(hi, lo + Math.floor(((RNG.scale(seed) + 1) / 2) * (hi - lo + 1)));
+export const randomInRange = (seed: number, lo: number, hi: number): number =>
+    Math.min(hi, lo + Math.floor(RNG.unit(seed) * (hi - lo + 1)));
 
 /**
  * Creates a target just above the top edge of the canvas.
@@ -172,7 +178,7 @@ const randomInRange = (seed: number, lo: number, hi: number): number =>
  * @param value The value the player must match
  * @returns A new target
  */
-const createTarget = (count: number, value: number): Target => ({
+export const createTarget = (count: number, value: number): Target => ({
     id: `target${count}`,
     value,
     x: Viewport.CANVAS_WIDTH / 2 - TargetView.WIDTH / 2,
@@ -190,7 +196,7 @@ const createTarget = (count: number, value: number): Target => ({
  * @param s Current state
  * @returns Updated state
  */
-const tick = (s: State): State => {
+export const tick = (s: State): State => {
     const speed = currentSpeed(s);
     const moved = s.targets.map(t => ({
         ...t,
@@ -271,7 +277,7 @@ interface Action {
  * is simply held still, rather than unsubscribing: the stream must stay
  * alive so that a restart or resume can be added without re-subscribing.
  */
-class Tick implements Action {
+export class Tick implements Action {
     apply = (s: State): State => (s.gameEnd || s.paused ? s : tick(s));
 }
 
@@ -281,7 +287,7 @@ class Tick implements Action {
  * A no-op after a game over, so pausing cannot mask the game-over screen.
  * The clock is unaffected; only whether Tick advances the game changes.
  */
-class Pause implements Action {
+export class Pause implements Action {
     apply = (s: State): State => (s.gameEnd ? s : { ...s, paused: !s.paused });
 }
 
@@ -291,7 +297,7 @@ class Pause implements Action {
  * The index is carried by the action rather than read from the state, so
  * that keyboard and mouse input can produce the same action type.
  */
-class FlipBit implements Action {
+export class FlipBit implements Action {
     constructor(public readonly index: number) {}
 
     apply = (s: State): State => ({
@@ -309,7 +315,7 @@ class FlipBit implements Action {
  * re-subscribing, which is why Tick holds the state still instead of
  * completing on game over.
  */
-class Restart implements Action {
+export class Restart implements Action {
     apply = (s: State): State => ({ ...initialState, exit: s.targets });
 }
 
