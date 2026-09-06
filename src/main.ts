@@ -40,7 +40,7 @@ const TargetView = {
 
 const Constants = {
     DIGIT_COUNT: 8,
-    TICK_RATE_MS: 20, // Might need to change this!
+    TICK_RATE_MS: 20,
     DEAD_LINE_Y: 300,
     MIN_SPAWN_TICKS: 50, // Shortest gap between targets
     MAX_SPAWN_TICKS: 150, // Longest gap between targets
