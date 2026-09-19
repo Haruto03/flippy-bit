@@ -1,71 +1,73 @@
-# Assignment 1
+# Flippy Bit
 
-## Usage
+A browser game written in TypeScript with RxJS, built in a purely functional
+reactive style. Binary numbers fall from the top of the canvas; flip the bits
+of an 8-digit row at the bottom so that its value matches the lowest target
+before it reaches the dead line.
 
-Setup (requires node.js):
+Built for FIT2102 (Programming Paradigms) at Monash University, Semester 2 2026.
+
+## How to play
+
+| Input | Action |
+|---|---|
+| `1` – `8` | Flip the corresponding bit (leftmost is the most significant) |
+| Click a digit box | Flip that bit |
+| `P` | Pause / resume |
+| `R` | Restart (during play or after game over) |
+
+Click anywhere on the page to start. A target is judged the moment its bottom
+edge touches the dead line: a match scores a point and removes the target, a
+mismatch ends the game. Targets fall faster the longer you survive.
+
+## Running locally
+
+Requires Node.js.
 
 ```bash
-> npm install
+npm install
+npm run dev      # serve on localhost, ctrl-click the URL in the console
+npm test         # vitest
+npm run build    # type-check and bundle
 ```
 
-Start tests:
+## Design
 
-```bash
-> npm test
-```
+The whole game lives in [`src/main.ts`](src/main.ts) and follows a
+Model–View–Update architecture on top of RxJS.
 
-Serve up the App (and ctrl-click the URL that appears in the console)
+- **State is immutable.** `State` and `Target` are `Readonly` types; every
+  update produces a new object with spread syntax.
+- **Every input is an `Action`.** The 20 ms clock (`Tick`), keyboard and mouse
+  bit flips (`FlipBit`), `Pause` and `Restart` all implement one interface
+  with an `apply(s: State): State` method. Keyboard and mouse produce the
+  *same* `FlipBit` action, so the model cannot tell the two inputs apart.
+- **One fold drives everything.** The input observables are `merge`d into a
+  single stream of actions and reduced with `scan(reduceState, initialState)`.
+  Because actions are applied sequentially, there is no concurrent
+  modification and adding a new kind of input never touches the reducer.
+- **Randomness is pure.** Target values and spawn gaps come from a seeded
+  linear congruential generator whose seed is carried in the state, so `tick`
+  is a pure function and a whole run can be reproduced from a single seed.
+- **Derived values are not stored.** The numeric value of the digit row and
+  the current fall speed are computed from the state where needed, so they
+  can never disagree with it.
+- **Side effects are confined to the view.** `render` is the only place that
+  touches the DOM; it is a plain projection of state onto SVG. Targets that
+  leave the canvas are reported through an `exit` list so the view can remove
+  their elements.
+- **The stream never completes.** On game over or pause, `Tick` holds the
+  state still instead of unsubscribing, which is what lets restart and resume
+  be ordinary actions rather than special cases.
 
-```bash
-> npm run dev
-```
-
-To format your code, for the assignment specifications:
-
-```bash
-npx prettier . --write
-```
-
-The configuration for this is set in `.prettierrc.json`. Feel free to change this to your heart's desire, but try to ensure it still fits the assignment guidelines.
-
-If you are using VS Code, you can also install the [Prettier extension](https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode). This skeleton code is set up to automatically format your code on save. You can disable this in `.vscode/settings.json` by changing `"editor.formatOnSave": true` to `"editor.formatOnSave": false`.
-
-## Implementing features
-
-There are a few files you may wish to modify. The rest should **not** be modified as they are used for configuring the build.
-
-`src/main.ts`
-
-- Code file used as the entry point
-- Most of your game logic should go here
-- Contains main function that is called on page load
-
-`src/style.css`
-
-- Stylesheet
-- You may edit this if you wish
-
-`index.html`
-
-- Main html file
-- Contains scaffold of game window and some sample shapes
-- Feel free to add to this, but avoid changing the existing code, especially the `id` fields
-
-`test/*.test.ts`
-
-- If you want to add tests, these go here
-- Uses [`vitest`](https://vitest.dev/api/)
-
-We expect the core logic of your game to be in `src/main.ts`, however, you may elect to spread your code over multiple files. In this case, please use [TS Modules](https://www.typescriptlang.org/docs/handbook/modules.html).
-
-Avoid separating code into too many files as it makes it hard to mark. The maximum recommended code file structure would be something like
+## Project layout
 
 ```
-src/
-  main.ts        -- main code logic inc. core game loop
-  types.ts       -- common types and type aliases
-  util.ts        -- util functions
-  state.ts       -- state processing and transformation
-  view.ts        -- rendering
-  observable.ts  -- functions to create Observable streams
+src/main.ts        game logic, actions, input streams and rendering
+src/style.css      stylesheet
+index.html         SVG canvas scaffold
+test/main.test.ts  vitest tests
 ```
+
+The build configuration and the SVG scaffold were provided as a course
+skeleton; the game logic, actions, input handling and rendering are my own.
