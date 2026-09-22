@@ -5,7 +5,7 @@ reactive style. Binary numbers fall from the top of the canvas; flip the bits
 of an 8-digit row at the bottom so that its value matches the lowest target
 before it reaches the dead line.
 
-Built for FIT2102 (Programming Paradigms) at Monash University, Semester 2 2026.
+Built by Haruto Iriyama.
 
 ## How to play
 
@@ -69,5 +69,5 @@ index.html         SVG canvas scaffold
 test/main.test.ts  vitest tests
 ```
 
-The build configuration and the SVG scaffold were provided as a course
-skeleton; the game logic, actions, input handling and rendering are my own.
+The build configuration and the SVG scaffold came from a starter template;
+the game logic, actions, input handling and rendering are my own.

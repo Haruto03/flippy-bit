@@ -4,7 +4,7 @@
  *
  * Study and complete the tasks in observable exercises first to get ideas.
  *
- * Course Notes showing Asteroids in FRP: https://tgdwyer.github.io/asteroids/
+ * Reference — Asteroids in FRP: https://tgdwyer.github.io/asteroids/
  *
  * You will be marked on your functional programming style
  * as well as the functionality that you implement.
@@ -144,7 +144,7 @@ export const currentSpeed = (s: State): number =>
 /**
  * A linear congruential generator providing pure hash/unit functions.
  *
- * Reused from the Week 4 applied exercise. Keeping the seed in the game
+ * Adapted from an earlier exercise. Keeping the seed in the game
  * state, rather than calling Math.random, is what lets `tick` stay a pure
  * function of its input, and lets a whole run be reproduced from one seed.
  */
@@ -159,7 +159,7 @@ export abstract class RNG {
     /**
      * Scales a hash to a float in [0, 1].
      *
-     * The Week 4 version returned [-1, 1] for jump strengths that swing above
+     * The original version returned [-1, 1] for jump strengths that swing above
      * and below a midpoint; this game only ever maps into a positive range,
      * so the extra shift is dropped and the fraction stays in [0, 1].
      */
