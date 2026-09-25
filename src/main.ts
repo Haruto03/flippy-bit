@@ -29,17 +29,17 @@ import {
 
 /** Constants */
 
-const Viewport = {
+export const Viewport = {
     CANVAS_WIDTH: 600,
     CANVAS_HEIGHT: 400,
 } as const;
 
-const TargetView = {
+export const TargetView = {
     WIDTH: 64,
     HEIGHT: 36,
 } as const;
 
-const Constants = {
+export const Constants = {
     DIGIT_COUNT: 8,
     TICK_RATE_MS: 20,
     DEAD_LINE_Y: 300,

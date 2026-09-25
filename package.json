@@ -15,12 +15,12 @@
     },
     "devDependencies": {
         "@types/node": "^24.0.10",
-        "@vitest/ui": "^3.2.4",
+        "@vitest/ui": "^5.0.2",
         "prettier": "^3.6.2",
         "tsx": "^4.20.3",
         "typescript": "~5.8.3",
         "vite": "^7.0.1",
         "vite-plugin-checker": "^0.9.3",
-        "vitest": "^3.2.4"
+        "vitest": "^5.0.2"
     }
 }
