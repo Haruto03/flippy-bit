@@ -1,23 +1,54 @@
 <!doctype html>
 <html>
     <head>
+        <meta charset="UTF-8" />
         <title>Flippy Bit</title>
     </head>
     <body>
         <h1>Flippy Bit</h1>
         <main id="main" class="flex col">
-            <svg id="svgCanvas" width="600" height="400">
-                <g id="gameOver" visibility="hidden">
-                    <rect
-                        x="225"
-                        y="176"
-                        fill="white"
-                        height="48"
-                        width="150"
-                    ></rect>
-                    <text x="235" y="206">Game Over</text>
-                </g>
-            </svg>
+            <div id="stage">
+                <svg id="svgCanvas" width="600" height="400">
+                    <g id="gameOver" visibility="hidden">
+                        <rect
+                            x="225"
+                            y="176"
+                            fill="white"
+                            height="48"
+                            width="150"
+                        ></rect>
+                        <text x="235" y="206">Game Over</text>
+                    </g>
+                </svg>
+                <div id="intro" class="overlay">
+                    <div class="card">
+                        <h2>How to play</h2>
+                        <p>
+                            Hex numbers fall toward the red line. Flip the
+                            8&nbsp;bits so the row equals the lowest number
+                            before it lands.
+                        </p>
+                        <p class="example">
+                            e.g. <code>2B</code> → <code>0010 1011</code>
+                        </p>
+                        <table>
+                            <tr>
+                                <td><kbd>1</kbd>–<kbd>8</kbd> / click</td>
+                                <td>Flip a bit</td>
+                            </tr>
+                            <tr>
+                                <td><kbd>P</kbd></td>
+                                <td>Pause</td>
+                            </tr>
+                            <tr>
+                                <td><kbd>R</kbd></td>
+                                <td>Restart</td>
+                            </tr>
+                        </table>
+                        <p class="start">Click or press Enter to start</p>
+                    </div>
+                </div>
+            </div>
             <div id="sideBar" class="flex col">
                 <div id="info" class="flex col">
                     <div class="text">

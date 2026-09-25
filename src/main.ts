@@ -24,6 +24,7 @@ import {
     scan,
     switchMap,
     take,
+    tap,
 } from "rxjs";
 
 /** Constants */
@@ -630,11 +631,28 @@ export const state$ = (): Observable<State> => {
     ).pipe(scan(reduceState, initialState));
 };
 
-// The following simply runs your main function on window load.  Make sure to leave it in place.
-// You should not need to change this, beware if you are.
-if (typeof window !== "undefined") {
-    // Observable: wait for first user click
-    const click$ = fromEvent(document.body, "mousedown").pipe(take(1));
+/**
+ * Hides the how-to-play card shown over the canvas before the first game.
+ * A view side effect, run once when the game starts.
+ */
+const hideIntro = (): void => {
+    document.querySelector("#intro")?.setAttribute("hidden", "");
+};
 
-    click$.pipe(switchMap(() => state$())).subscribe(render());
+// Runs the game on window load, once the player dismisses the intro card.
+if (typeof window !== "undefined") {
+    // Observable: wait for the first click, or Enter / Space
+    const start$ = merge(
+        fromEvent(document.body, "mousedown"),
+        fromEvent<KeyboardEvent>(document, "keydown").pipe(
+            filter(e => e.code === "Enter" || e.code === "Space"),
+        ),
+    ).pipe(take(1));
+
+    start$
+        .pipe(
+            tap(hideIntro),
+            switchMap(() => state$()),
+        )
+        .subscribe(render());
 }
