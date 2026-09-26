@@ -1,15 +1,17 @@
 /**
- * Inside this file you will use the classes and functions from rx.js
- * to add visuals to the svg element in index.html, animate them, and make them interactive.
+ * Flippy Bit — flip the bits of an 8-digit binary row to match the hex
+ * numbers falling toward the dead line.
  *
- * Study and complete the tasks in observable exercises first to get ideas.
+ * Written in a functional reactive style with RxJS, following a
+ * Model–View–Update architecture:
  *
- * Reference — Asteroids in FRP: https://tgdwyer.github.io/asteroids/
+ * - Model: an immutable `State`, advanced only by pure `Action`s.
+ * - Update: every input (clock, keyboard, mouse) becomes an Action on one
+ *   merged stream, folded into the state with `scan`.
+ * - View: `render` and `playSounds` are the only functions with side
+ *   effects; they project each state onto the SVG canvas and the speakers.
  *
- * You will be marked on your functional programming style
- * as well as the functionality that you implement.
- *
- * Document your code!
+ * Design inspired by Asteroids in FRP: https://tgdwyer.github.io/asteroids/
  */
 
 import "./style.css";
@@ -21,10 +23,15 @@ import {
     interval,
     map,
     merge,
+    pairwise,
     scan,
+    share,
+    shareReplay,
+    startWith,
     switchMap,
     take,
     tap,
+    withLatestFrom,
 } from "rxjs";
 
 /** Constants */
@@ -48,7 +55,10 @@ export const Constants = {
     SEED: 1234, // Starting seed for the pure RNG
     BASE_SPEED: 0.5, // Pixels a target moves per tick at the start
     SPEED_GROWTH: 0.0005, // Extra pixels-per-tick added each tick survived
+    LEVEL_SPEED_STEP: 0.15, // Extra pixels-per-tick added per level reached
     MAX_SPEED: 3, // Cap so late-game targets stay catchable
+    POINTS_PER_LEVEL: 5, // Score needed to advance one level
+    LEVEL_BANNER_TICKS: 60, // How long "LEVEL n" stays on screen (~1.2s)
 } as const;
 
 /**
@@ -67,11 +77,8 @@ const DigitRow = {
 /**
  * A falling target: its value and top-left position on the canvas.
  *
- * `x` is carried in the state even though every target currently spawns at
- * the centre. Keeping position fully in the state (rather than hard-coding
- * the centre in the view) means the renderer stays a plain projection, and
- * leaves room for targets to fall in different columns without touching the
- * view.
+ * Position lives entirely in the state — including the column the target
+ * falls in — so the renderer stays a plain projection of it.
  */
 export type Target = Readonly<{
     id: string;
@@ -92,6 +99,8 @@ export type State = Readonly<{
     rngSeed: number;
     nextSpawnTime: number;
     paused: boolean;
+    /** The tick at which the last level was reached; null before level 2. */
+    levelUpTime: number | null;
 }>;
 
 export const initialState: State = {
@@ -105,6 +114,7 @@ export const initialState: State = {
     rngSeed: Constants.SEED,
     nextSpawnTime: 0,
     paused: false,
+    levelUpTime: null,
 };
 
 /**
@@ -130,16 +140,29 @@ export const bitsValue = (bits: ReadonlyArray<boolean>): number =>
     bits.reduce((acc, b) => acc * 2 + (b ? 1 : 0), 0);
 
 /**
- * The fall speed for the current moment, growing with time survived.
+ * The level reached for a score: 1 to start, +1 every POINTS_PER_LEVEL.
  *
- * Derived from `time` rather than stored, so it needs no separate state and
- * resets to the base speed automatically on restart. Capped so that very
- * long games stay playable rather than becoming impossible.
+ * Derived from the score rather than stored, for the same reason as the
+ * digit row's value: it can never disagree with the score.
+ */
+export const levelFor = (score: number): number =>
+    1 + Math.floor(score / Constants.POINTS_PER_LEVEL);
+
+/**
+ * The fall speed for the current moment, growing with time survived and
+ * with each level reached.
+ *
+ * Derived from `time` and `score` rather than stored, so it needs no
+ * separate state and resets to the base speed automatically on restart.
+ * Capped so that very long games stay playable rather than becoming
+ * impossible.
  */
 export const currentSpeed = (s: State): number =>
     Math.min(
         Constants.MAX_SPEED,
-        Constants.BASE_SPEED + s.time * Constants.SPEED_GROWTH,
+        Constants.BASE_SPEED +
+            s.time * Constants.SPEED_GROWTH +
+            (levelFor(s.score) - 1) * Constants.LEVEL_SPEED_STEP,
     );
 
 /**
@@ -178,7 +201,8 @@ export const randomInRange = (seed: number, lo: number, hi: number): number =>
     Math.min(hi, lo + Math.floor(RNG.unit(seed) * (hi - lo + 1)));
 
 /**
- * Creates a target just above the top edge of the canvas.
+ * Creates a target just above the top edge of the canvas, centred over one
+ * of the digit columns.
  *
  * Starting fully off-screen makes the target slide into view rather than
  * appear abruptly. Horizontal placement happens here so that the state
@@ -186,12 +210,17 @@ export const randomInRange = (seed: number, lo: number, hi: number): number =>
  *
  * @param count Number of targets created so far; supplies a unique id
  * @param value The value the player must match
+ * @param column Which digit column (0 = leftmost) the target falls above
  * @returns A new target
  */
-export const createTarget = (count: number, value: number): Target => ({
+export const createTarget = (
+    count: number,
+    value: number,
+    column: number,
+): Target => ({
     id: `target${count}`,
     value,
-    x: Viewport.CANVAS_WIDTH / 2 - TargetView.WIDTH / 2,
+    x: column * DigitRow.WIDTH + (DigitRow.WIDTH - TargetView.WIDTH) / 2,
     y: -TargetView.HEIGHT,
 });
 
@@ -239,31 +268,38 @@ export const tick = (s: State): State => {
 
     const remaining = moved.filter(not(leaving));
 
-    // Spawn when the scheduled time arrives, drawing the value and the next
-    // gap (1-3s) from the RNG. The seed is advanced twice and stored, so the
-    // sequence never repeats and each draw is independent.
+    // Spawn when the scheduled time arrives, drawing the value, the column
+    // and the next gap (1-3s) from the RNG. The seed is advanced once per
+    // draw and stored, so the sequence never repeats and each draw is
+    // independent.
     const spawning = s.time >= s.nextSpawnTime;
     const valueSeed = RNG.hash(s.rngSeed);
-    const gapSeed = RNG.hash(valueSeed);
+    const columnSeed = RNG.hash(valueSeed);
+    const gapSeed = RNG.hash(columnSeed);
     const gap = randomInRange(
         gapSeed,
         Constants.MIN_SPAWN_TICKS,
         Constants.MAX_SPAWN_TICKS,
     );
+    const spawned = createTarget(
+        s.objCount,
+        randomInRange(valueSeed, 0, 255),
+        randomInRange(columnSeed, 0, Constants.DIGIT_COUNT - 1),
+    );
+
+    const score = correct ? s.score + 1 : s.score;
+    const levelledUp = levelFor(score) > levelFor(s.score);
 
     return {
         ...s,
         time: s.time + 1,
-        targets: spawning
-            ? remaining.concat(
-                  createTarget(s.objCount, randomInRange(valueSeed, 0, 255)),
-              )
-            : remaining,
+        targets: spawning ? remaining.concat(spawned) : remaining,
         objCount: spawning ? s.objCount + 1 : s.objCount,
         rngSeed: spawning ? gapSeed : s.rngSeed,
         nextSpawnTime: spawning ? s.time + gap : s.nextSpawnTime,
         exit: moved.filter(leaving),
-        score: correct ? s.score + 1 : s.score,
+        score,
+        levelUpTime: levelledUp ? s.time : s.levelUpTime,
         gameEnd: judged !== undefined && !correct,
     };
 };
@@ -489,6 +525,24 @@ const render = (): ((s: State) => void) => {
     pausedView.textContent = "PAUSED";
     svg.appendChild(pausedView);
 
+    // Shown briefly after each level up; only its text and visibility vary.
+    const levelBanner = createSvgElement(svg.namespaceURI, "text", {
+        x: `${Viewport.CANVAS_WIDTH / 2}`,
+        y: `${Viewport.CANVAS_HEIGHT / 3}`,
+        "text-anchor": "middle",
+        "font-family": "sans-serif",
+        "font-size": "40",
+        "font-weight": "bold",
+        fill: "#fff59d",
+        stroke: "black",
+        "stroke-width": "1",
+        visibility: "hidden",
+    });
+    svg.appendChild(levelBanner);
+
+    const levelText = document.querySelector("#levelText") as HTMLElement;
+    const finalScore = document.querySelector("#finalScore") as SVGElement;
+
     /**
      * Renders the current state to the canvas.
      *
@@ -516,12 +570,22 @@ const render = (): ((s: State) => void) => {
             const view = document.getElementById(t.id);
             view ? svg.removeChild(view) : null;
         });
+        const level = levelFor(s.score);
         scoreText.textContent = String(s.score);
+        levelText.textContent = String(level);
+        finalScore.textContent = `Score ${s.score} · Level ${level}`;
+
+        levelBanner.textContent = `LEVEL ${level}`;
+        const bannerOn =
+            s.levelUpTime !== null &&
+            s.time - s.levelUpTime < Constants.LEVEL_BANNER_TICKS &&
+            !s.gameEnd;
 
         // Both branches are needed: the view must be able to return to the
-        // playing state once a restart is added.
+        // playing state after a restart or resume.
         s.gameEnd ? show(gameOverView) : hide(gameOverView);
         s.paused ? show(pausedView) : hide(pausedView);
+        bannerOn ? show(levelBanner) : hide(levelBanner);
     };
 };
 
@@ -631,6 +695,104 @@ export const state$ = (): Observable<State> => {
     ).pipe(scan(reduceState, initialState));
 };
 
+// Sound effects
+
+/** A game event worth a sound. */
+export type SoundEvent = "score" | "levelUp" | "gameOver";
+
+/**
+ * The sound to play between two consecutive states, if any.
+ *
+ * Pure: events are derived by comparing states, so the model needs no
+ * extra fields for sound, and a restart (score dropping to 0) is silent.
+ * A level up replaces the ordinary score sound rather than overlapping it.
+ */
+export const soundEvents = (
+    prev: State,
+    next: State,
+): ReadonlyArray<SoundEvent> => [
+    ...(levelFor(next.score) > levelFor(prev.score)
+        ? ["levelUp" as const]
+        : next.score > prev.score
+          ? ["score" as const]
+          : []),
+    ...(next.gameEnd && !prev.gameEnd ? ["gameOver" as const] : []),
+];
+
+/** Each sound as a waveform and a sequence of [frequency Hz, seconds]. */
+const Sounds: Record<
+    SoundEvent,
+    Readonly<{
+        wave: OscillatorType;
+        notes: ReadonlyArray<readonly [number, number]>;
+    }>
+> = {
+    score: { wave: "square", notes: [[880, 0.07]] },
+    levelUp: {
+        wave: "square",
+        notes: [
+            [660, 0.08],
+            [880, 0.08],
+            [1320, 0.16],
+        ],
+    },
+    gameOver: {
+        wave: "sawtooth",
+        notes: [
+            [330, 0.15],
+            [247, 0.15],
+            [165, 0.35],
+        ],
+    },
+};
+
+/**
+ * Returns a function that plays sound events with the Web Audio API.
+ *
+ * Sounds are synthesised rather than loaded from files, so the game ships
+ * no assets. Does nothing where Web Audio is unavailable (e.g. tests).
+ */
+const soundPlayer = (): ((events: ReadonlyArray<SoundEvent>) => void) => {
+    if (typeof AudioContext === "undefined") return () => undefined;
+    const ctx = new AudioContext();
+
+    const play = (event: SoundEvent): void => {
+        const { wave, notes } = Sounds[event];
+        // Each note starts when the previous one ends
+        notes.reduce((start, [frequency, seconds]) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = wave;
+            osc.frequency.value = frequency;
+            gain.gain.setValueAtTime(0.06, start);
+            gain.gain.exponentialRampToValueAtTime(0.0001, start + seconds);
+            osc.connect(gain).connect(ctx.destination);
+            osc.start(start);
+            osc.stop(start + seconds);
+            return start + seconds;
+        }, ctx.currentTime);
+    };
+
+    return events => {
+        // Browsers keep audio suspended until the page has had a user gesture
+        if (ctx.state === "suspended") ctx.resume();
+        events.forEach(play);
+    };
+};
+
+/**
+ * Whether sound is muted, toggled by the M key. Starts unmuted.
+ *
+ * Replayed to late subscribers so every consumer sees the current setting.
+ */
+const muted$ = (): Observable<boolean> =>
+    fromEvent<KeyboardEvent>(document, "keydown").pipe(
+        filter(e => e.code === "KeyM" && !e.repeat),
+        scan(muted => !muted, false),
+        startWith(false),
+        shareReplay(1),
+    );
+
 /**
  * Hides the how-to-play card shown over the canvas before the first game.
  * A view side effect, run once when the game starts.
@@ -649,10 +811,29 @@ if (typeof window !== "undefined") {
         ),
     ).pipe(take(1));
 
-    start$
+    // One game stream shared by the renderer and the sound effects
+    const game$ = start$.pipe(
+        tap(hideIntro),
+        switchMap(() => state$()),
+        share(),
+    );
+    const mute$ = muted$();
+
+    game$.subscribe(render());
+
+    mute$.subscribe(muted => {
+        const soundText = document.querySelector("#soundText");
+        if (soundText) soundText.textContent = muted ? "Off (M)" : "On (M)";
+    });
+
+    game$
         .pipe(
-            tap(hideIntro),
-            switchMap(() => state$()),
+            pairwise(),
+            map(([prev, next]) => soundEvents(prev, next)),
+            filter(events => events.length > 0),
+            withLatestFrom(mute$),
+            filter(([, muted]) => !muted),
+            map(([events]) => events),
         )
-        .subscribe(render());
+        .subscribe(soundPlayer());
 }

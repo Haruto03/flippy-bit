@@ -14,7 +14,9 @@ import {
     createTarget,
     currentSpeed,
     initialState,
+    levelFor,
     randomInRange,
+    soundEvents,
     state$,
     tick,
 } from "../src/main";
@@ -103,11 +105,78 @@ describe("RNG", () => {
 });
 
 describe("createTarget", () => {
-    it("starts fully above the canvas, horizontally centred", () => {
-        const t = createTarget(3, 99);
+    const columnWidth = Viewport.CANVAS_WIDTH / Constants.DIGIT_COUNT;
+
+    it("starts fully above the canvas, centred over its column", () => {
+        const t = createTarget(3, 99, 2);
         expect(t).toMatchObject({ id: "target3", value: 99 });
         expect(t.y + TargetView.HEIGHT).toBeLessThanOrEqual(0);
-        expect(t.x + TargetView.WIDTH / 2).toBe(Viewport.CANVAS_WIDTH / 2);
+        expect(t.x + TargetView.WIDTH / 2).toBe(2.5 * columnWidth);
+    });
+
+    it("stays inside the canvas in the outermost columns", () => {
+        expect(createTarget(0, 0, 0).x).toBeGreaterThanOrEqual(0);
+        const right = createTarget(0, 0, Constants.DIGIT_COUNT - 1);
+        expect(right.x + TargetView.WIDTH).toBeLessThanOrEqual(
+            Viewport.CANVAS_WIDTH,
+        );
+    });
+});
+
+describe("levels", () => {
+    it("go up every POINTS_PER_LEVEL points", () => {
+        expect(levelFor(0)).toBe(1);
+        expect(levelFor(Constants.POINTS_PER_LEVEL - 1)).toBe(1);
+        expect(levelFor(Constants.POINTS_PER_LEVEL)).toBe(2);
+        expect(levelFor(Constants.POINTS_PER_LEVEL * 3)).toBe(4);
+    });
+
+    it("make targets fall faster", () => {
+        expect(
+            currentSpeed(playing({ score: Constants.POINTS_PER_LEVEL })),
+        ).toBeGreaterThan(currentSpeed(playing({ score: 0 })));
+    });
+
+    it("record when a level is reached, for the banner", () => {
+        const almost = playing({
+            time: 40,
+            score: Constants.POINTS_PER_LEVEL - 1,
+            bits: bitsFor(9),
+            targets: [atLine("a", 9)],
+        });
+        expect(tick(almost).levelUpTime).toBe(40);
+
+        const noLevel = playing({
+            bits: bitsFor(9),
+            targets: [atLine("a", 9)],
+        });
+        expect(tick(noLevel).levelUpTime).toBeNull();
+    });
+});
+
+describe("soundEvents", () => {
+    it("plays a sound for a point", () => {
+        expect(soundEvents(playing(), playing({ score: 1 }))).toEqual([
+            "score",
+        ]);
+    });
+
+    it("plays the level-up sound instead of the point sound", () => {
+        const before = playing({ score: Constants.POINTS_PER_LEVEL - 1 });
+        const after = playing({ score: Constants.POINTS_PER_LEVEL });
+        expect(soundEvents(before, after)).toEqual(["levelUp"]);
+    });
+
+    it("plays a sound once when the game ends", () => {
+        const over = playing({ gameEnd: true });
+        expect(soundEvents(playing(), over)).toEqual(["gameOver"]);
+        expect(soundEvents(over, over)).toEqual([]);
+    });
+
+    it("stays silent on restart and ordinary ticks", () => {
+        const midGame = playing({ score: 7 });
+        expect(soundEvents(midGame, new Restart().apply(midGame))).toEqual([]);
+        expect(soundEvents(initialState, tick(initialState))).toEqual([]);
     });
 });
 
@@ -130,6 +199,23 @@ describe("tick", () => {
         const gap = next.nextSpawnTime - initialState.time;
         expect(gap).toBeGreaterThanOrEqual(Constants.MIN_SPAWN_TICKS);
         expect(gap).toBeLessThanOrEqual(Constants.MAX_SPAWN_TICKS);
+    });
+
+    it("spawns targets in varying columns", () => {
+        // Collect every target spawned over a long run, ignoring the dead
+        // line so the game can't end first
+        const spawnedXs = Array.from({ length: 3000 }).reduce<{
+            s: State;
+            xs: Set<number>;
+        }>(
+            ({ s, xs }) => {
+                const next = tick({ ...s, targets: [] });
+                next.targets.forEach(t => xs.add(t.x));
+                return { s: next, xs };
+            },
+            { s: initialState, xs: new Set() },
+        ).xs;
+        expect(spawnedXs.size).toBeGreaterThan(3);
     });
 
     it("does not spawn before the scheduled time", () => {

@@ -159,8 +159,17 @@ svg rect {
     text-align: center;
 }
 
-#gameOver {
-    font-size: 1.5em;
+#gameOver text {
+    text-anchor: middle;
+    font-size: 18px;
+}
+
+#gameOver .title {
+    font-size: 30px;
     font-weight: bolder;
-    text-align: center;
+}
+
+#gameOver .hint {
+    font-size: 14px;
+    fill: rgb(90, 90, 90);
 }

@@ -11,13 +11,18 @@
                 <svg id="svgCanvas" width="600" height="400">
                     <g id="gameOver" visibility="hidden">
                         <rect
-                            x="225"
-                            y="176"
+                            x="180"
+                            y="110"
+                            rx="10"
                             fill="white"
-                            height="48"
-                            width="150"
+                            height="140"
+                            width="240"
                         ></rect>
-                        <text x="235" y="206">Game Over</text>
+                        <text x="300" y="152" class="title">Game Over</text>
+                        <text x="300" y="190" id="finalScore">Score 0</text>
+                        <text x="300" y="228" class="hint">
+                            Press R to restart
+                        </text>
                     </g>
                 </svg>
                 <div id="intro" class="overlay">
@@ -44,6 +49,10 @@
                                 <td><kbd>R</kbd></td>
                                 <td>Restart</td>
                             </tr>
+                            <tr>
+                                <td><kbd>M</kbd></td>
+                                <td>Sound on / off</td>
+                            </tr>
                         </table>
                         <p class="start">Click or press Enter to start</p>
                     </div>
@@ -54,6 +63,14 @@
                     <div class="text">
                         <span class="left">Score: </span>
                         <span class="right" id="scoreText">...</span>
+                    </div>
+                    <div class="text">
+                        <span class="left">Level: </span>
+                        <span class="right" id="levelText">...</span>
+                    </div>
+                    <div class="text">
+                        <span class="left">Sound: </span>
+                        <span class="right" id="soundText">On (M)</span>
                     </div>
                 </div>
             </div>
