@@ -50,8 +50,8 @@ export const Constants = {
     DIGIT_COUNT: 8,
     TICK_RATE_MS: 20,
     DEAD_LINE_Y: 300,
-    MIN_SPAWN_TICKS: 50, // Shortest gap between targets
-    MAX_SPAWN_TICKS: 150, // Longest gap between targets
+    MIN_SPAWN_TICKS: 100, // Shortest gap between targets (2s)
+    MAX_SPAWN_TICKS: 200, // Longest gap between targets (4s)
     SEED: 1234, // Starting seed for the pure RNG
     BASE_SPEED: 0.5, // Pixels a target moves per tick at the start
     SPEED_GROWTH: 0.0005, // Extra pixels-per-tick added each tick survived
@@ -269,7 +269,7 @@ export const tick = (s: State): State => {
     const remaining = moved.filter(not(leaving));
 
     // Spawn when the scheduled time arrives, drawing the value, the column
-    // and the next gap (1-3s) from the RNG. The seed is advanced once per
+    // and the next gap (2-4s) from the RNG. The seed is advanced once per
     // draw and stored, so the sequence never repeats and each draw is
     // independent.
     const spawning = s.time >= s.nextSpawnTime;
