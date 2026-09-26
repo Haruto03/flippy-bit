@@ -12,6 +12,10 @@ TypeScript と RxJS で書いた、純粋関数型リアクティブスタイル
 
 制作: Haruto Iriyama
 
+<img src="docs/screenshot-gameplay.png" alt="プレイ中の画面。37・30・8A のターゲットがデッドラインに向かって落下し、ビット列は最下点のターゲットに合わせて 1000 1010 になっている" width="620">
+
+<sub>ビット列は <code>1000 1010</code>、最下点のターゲット <code>8A</code> と一致した状態です。</sub>
+
 ## 遊び方
 
 | 入力 | 動作 |

@@ -13,6 +13,10 @@ lowest target before it reaches the dead line.
 
 Built by Haruto Iriyama.
 
+<img src="docs/screenshot-gameplay.png" alt="Flippy Bit in play: the targets 37, 30 and 8A falling toward the dead line, with the bit row set to 1000 1010 to match the lowest one" width="620">
+
+<sub>The row reads <code>1000 1010</code> — matching <code>8A</code>, the lowest target, just before it lands.</sub>
+
 ## How to play
 
 | Input | Action |
