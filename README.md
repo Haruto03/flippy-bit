@@ -7,9 +7,9 @@ English | [日本語](README.ja.md)
 **[Play it in your browser →](https://haruto03.github.io/flippy-bit/)**
 
 A browser game written in TypeScript with RxJS, built in a purely functional
-reactive style. Binary numbers fall from the top of the canvas; flip the bits
-of an 8-digit row at the bottom so that its value matches the lowest target
-before it reaches the dead line.
+reactive style. Hexadecimal numbers fall from the top of the canvas; flip the
+bits of an 8-digit binary row at the bottom so that its value matches the
+lowest target before it reaches the dead line.
 
 Built by Haruto Iriyama.
 
